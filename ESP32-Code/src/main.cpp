@@ -1,5 +1,6 @@
 #include <Arduino.h>
 
+//Pin definitions
 
 #define MOISTURE_SENSOR1_PIN 4
 #define MOISTURE_SENSOR2_PIN 5
@@ -15,18 +16,11 @@
 
 
 // put function declarations here:
-int myFunction(int, int);
 
 void setup() {
   // put your setup code here, to run once:
-  int result = myFunction(2, 3);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
 }
