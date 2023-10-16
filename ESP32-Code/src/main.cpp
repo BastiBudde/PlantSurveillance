@@ -7,7 +7,7 @@
 // 11		GPIO		Moisture Sensor 1: DIS
 // 5		ADC1		Moisture Sensor 2: OUT
 // 12		GPIO		Moisture Sensor 2: DIS
-//
+// 6		GPIO		Water Level Sensor
 
 //Pin definitions
 #define WATER_LEVEL_SENSOR_PIN 6
@@ -21,11 +21,12 @@
 
 
 #define NUM_MOISTURE_SAMPLES 6
+#define NUM_WATERLEVEL_SAMPLES 6
 
 
-/////////////////////////////////////////////////
-/*------------------VARIABLES------------------*/
-/////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+/*-----------------------VARIABLES-----------------------*/
+///////////////////////////////////////////////////////////
 
 struct moistureSensor {
   uint8_t sensorPin;
@@ -34,10 +35,19 @@ struct moistureSensor {
 };
 
 //Array of struct moistureSensors that should contain every moisture sensor and its used pins on the µC dev board
-moistureSensor moistureSensors[] = {
+moistureSensor moistSensrs[] = {
   {4, 11},
   {5, 13}
 };
+
+
+struct waterLevelSensor {
+	uint8_t sensorPin;
+	bool wtrLvlLow; //Sensor switch can be closed (water level low) or open
+};
+
+waterLevelSensor wtrLvlSensr = {6};
+
 
 TaskHandle_t appCommunicationTask;
 TaskHandle_t plantSurveillanceTask;
@@ -45,11 +55,11 @@ SemaphoreHandle_t xNewSensorData;   //Used for synchronization of sensor data be
 SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands between tasks
 
 
-/////////////////////////////////////////////////
-/*------------------FUNCTIONS------------------*/
-/////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+/*-----------------------FUNCTIONS-----------------------*/
+///////////////////////////////////////////////////////////
 
-void readMoistureSensor(moistureSensor s)
+void readMoistSensr(moistureSensor s)
 {
 	digitalWrite(s.disablePin, LOW); //Enable power for moisture sensor to be read
 	
@@ -58,6 +68,7 @@ void readMoistureSensor(moistureSensor s)
 	for(int i=0; i<NUM_MOISTURE_SAMPLES; i++)
 	{
 		s.reading += analogRead(s.sensorPin);
+		//delay(10);
 	}
 	s.reading /= NUM_MOISTURE_SAMPLES;
 
@@ -65,9 +76,27 @@ void readMoistureSensor(moistureSensor s)
 }
 
 
-/////////////////////////////////////////////////
-/*-----------------MAIN TASKS------------------*/
-/////////////////////////////////////////////////
+void readWtrLvlSensr(waterLevelSensor s)
+{
+	//Read sensor multiple times in case sensor is just at the tipping point
+	for (int i = 0; i < NUM_WATERLEVEL_SAMPLES; i++)
+	{
+		if(digitalRead(s.sensorPin) == LOW){
+			s.wtrLvlLow = false;
+		}
+		else if(digitalRead(s.sensorPin) == HIGH)
+		{
+			s.wtrLvlLow = true;
+			return;
+		}
+	}
+	
+	return;
+}
+
+///////////////////////////////////////////////////////////
+/*----------------------MAIN TASKS-----------------------*/
+///////////////////////////////////////////////////////////
 
 void plantSurveillanceCode(void *)
 {
@@ -101,9 +130,9 @@ void appCommunicationCode(void *)
 }
 
 
-/////////////////////////////////////////////////
-/*--------------------SETUP--------------------*/
-/////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+/*-------------------------SETUP-------------------------*/
+///////////////////////////////////////////////////////////
 
 void setup() {
 
@@ -111,6 +140,7 @@ void setup() {
 	delay(1000); //Take some time to open up the Serial Monitor
 
 	//Set pin modes
+	pinMode(WATER_LEVEL_SENSOR_PIN, INPUT);
 	pinMode(PUMP_ENABEL_PIN, OUTPUT);
 	pinMode(SOLENOID1_PIN, OUTPUT);
 	pinMode(SOLENOID2_PIN, OUTPUT);
@@ -145,6 +175,6 @@ void setup() {
 		0);          /* pin task to core */ 
 }
 
+
 void loop() {
-	// put your main code here, to run repeatedly:
 }
