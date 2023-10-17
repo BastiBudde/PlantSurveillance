@@ -17,11 +17,14 @@
 #define SOLENOID1_PIN 15
 #define SOLENOID2_PIN 16
 #define SOLENOID3_PIN 17
-#define SOLENOID4_PIN 18
+#define SOLENOID4_PIN 18 
 
+#define NUM_MOIST_SENSRS 2
 
 #define NUM_MOISTURE_SAMPLES 6
 #define NUM_WATERLEVEL_SAMPLES 6
+
+#define US_IN_1M 60000*1000
 
 
 ///////////////////////////////////////////////////////////
@@ -35,7 +38,7 @@ struct moistureSensor {
 };
 
 //Array of struct moistureSensors that should contain every moisture sensor and its used pins on the µC dev board
-moistureSensor moistSensrs[] = {
+moistureSensor moistSensrs[NUM_MOIST_SENSRS] = {
   {4, 11},
   {5, 13}
 };
@@ -51,7 +54,7 @@ waterLevelSensor wtrLvlSensr = {6};
 
 TaskHandle_t appCommunicationTask;
 TaskHandle_t plantSurveillanceTask;
-SemaphoreHandle_t xNewSensorData;   //Used for synchronization of sensor data between tasks
+SemaphoreHandle_t xNewSensorData;  //Used for synchronization of sensor data between tasks
 SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands between tasks
 
 
@@ -62,16 +65,18 @@ SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands betw
 void readMoistSensr(moistureSensor s)
 {
 	digitalWrite(s.disablePin, LOW); //Enable power for moisture sensor to be read
-	
+	delay(100);
+
 	//Take multiple samples of the voltage reading and take the average
 	s.reading = 0;
 	for(int i=0; i<NUM_MOISTURE_SAMPLES; i++)
 	{
 		s.reading += analogRead(s.sensorPin);
-		//delay(10);
+		delay(10);
 	}
 	s.reading /= NUM_MOISTURE_SAMPLES;
 
+	digitalWrite(s.disablePin, HIGH); //Disable power for moisture sensor to be read
 	return;
 }
 
@@ -100,15 +105,32 @@ void readWtrLvlSensr(waterLevelSensor s)
 
 void plantSurveillanceCode(void *)
 {
+	uint64_t timeLastMoistureCheck = esp_timer_get_time();
+	uint64_t timeBetweenMoistureChecks; // In flash speicher?
+
 	while(true)
 	{
 		//Check if appCommunications signaled new commands from smartphone App
 		if(xSemaphoreTake(xNewAppCommands, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-
+			
 		}
 
+		//Read measurement (Timer)
+		if ( (esp_timer_get_time() - timeLastMoisterCheck) >= US_IN_1M * timeBetweenMoistureChecks )
+		{
+			//Read and update all moisture sensors
+			for(int i = 0; i<NUM_MOIST_SENSRS; i++)
+			{
+				readMoistSensr(moistSensrs[i]);
+			}
 
+			readWtrLvlSensr(wtrLvlSensr); // Waterlevel Sensor
+			
+			//Let other task know that new Sensor dada is available
+			xSemaphoreGive(xNewSensorData);
+			timeLastMoistureCheck = esp_timer_get_time(); // Set time for next check
+		}
 
 	}
 
@@ -140,6 +162,8 @@ void setup() {
 	delay(1000); //Take some time to open up the Serial Monitor
 
 	//Set pin modes
+	pinMode(moistSensrs[0].disablePin, OUTPUT);
+	pinMode(moistSensrs[1].disablePin, OUTPUT);
 	pinMode(WATER_LEVEL_SENSOR_PIN, INPUT);
 	pinMode(PUMP_ENABEL_PIN, OUTPUT);
 	pinMode(SOLENOID1_PIN, OUTPUT);
@@ -153,6 +177,8 @@ void setup() {
 
 	xNewSensorData = xSemaphoreCreateBinary();
 	xNewAppCommands = xSemaphoreCreateBinary();
+
+	
 
 	//Create task for plant surveillance (sensor readings/evaluations, watering)
 	xTaskCreatePinnedToCore(
