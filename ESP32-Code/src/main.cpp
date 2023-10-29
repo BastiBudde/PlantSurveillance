@@ -19,7 +19,7 @@
 #define SOLENOID3_PIN 17
 #define SOLENOID4_PIN 18 
 
-#define NUM_MOIST_SENSRS 2
+#define NUM_MOIST_SENSORS 2
 
 #define NUM_MOISTURE_SAMPLES 6
 #define NUM_WATERLEVEL_SAMPLES 6
@@ -31,30 +31,36 @@
 /*-----------------------VARIABLES-----------------------*/
 ///////////////////////////////////////////////////////////
 
+bool startup;
+
+
+//struct for a moisture Sensor containing used µC pins and last read value
 struct moistureSensor {
   uint8_t sensorPin;
   uint8_t disablePin;
   uint16_t reading;
 };
 
-//Array of struct moistureSensors that should contain every moisture sensor and its used pins on the µC dev board
-moistureSensor moistSensrs[NUM_MOIST_SENSRS] = {
+//Array of all moisture sensors
+moistureSensor moistureSensors[NUM_MOIST_SENSORS] = {
   {4, 11},
   {5, 13}
 };
 
-
+//struct for a Water Level Sensor containing used µC pin and last read value
 struct waterLevelSensor {
 	uint8_t sensorPin;
 	bool wtrLvlLow; //Sensor switch can be closed (water level low) or open
 };
 
-waterLevelSensor wtrLvlSensr = {6};
+//Array of all water level sensors
+waterLevelSensor waterLvlSensor = {6};
 
 
 TaskHandle_t appCommunicationTask;
 TaskHandle_t plantSurveillanceTask;
-SemaphoreHandle_t xNewSensorData;  //Used for synchronization of sensor data between tasks
+SemaphoreHandle_t xNewMoistureData;  //Used for synchronization of sensor data between tasks
+SemaphoreHandle_t xNewWaterLvlData;  //Used for synchronization of sensor data between tasks
 SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands between tasks
 
 
@@ -62,7 +68,7 @@ SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands betw
 /*-----------------------FUNCTIONS-----------------------*/
 ///////////////////////////////////////////////////////////
 
-void readMoistSensr(moistureSensor s)
+void readMoistSensor(moistureSensor s)
 {
 	digitalWrite(s.disablePin, LOW); //Enable power for moisture sensor to be read
 	delay(100);
@@ -80,8 +86,16 @@ void readMoistSensr(moistureSensor s)
 	return;
 }
 
+void readEveryMoistSensor(moistureSensor s[])
+{
+	for(int i = 0; i<NUM_MOIST_SENSORS; i++)
+	{
+		readMoistSensor(s[i]);
+	}
+}
 
-void readWtrLvlSensr(waterLevelSensor s)
+
+void readWaterLvlSensor(waterLevelSensor s)
 {
 	//Read sensor multiple times in case sensor is just at the tipping point
 	for (int i = 0; i < NUM_WATERLEVEL_SAMPLES; i++)
@@ -99,6 +113,7 @@ void readWtrLvlSensr(waterLevelSensor s)
 	return;
 }
 
+
 ///////////////////////////////////////////////////////////
 /*----------------------MAIN TASKS-----------------------*/
 ///////////////////////////////////////////////////////////
@@ -106,35 +121,48 @@ void readWtrLvlSensr(waterLevelSensor s)
 void plantSurveillanceCode(void *)
 {
 	uint64_t timeLastMoistureCheck = esp_timer_get_time();
-	uint64_t timeBetweenMoistureChecks; // In flash speicher?
+	uint64_t timeLastWaterLvlCheck = esp_timer_get_time();
+	uint64_t intervalMoistureCheck; // In flash speicher?
+	uint64_t intervalWaterLvlCheck; 
+
+	uint16_t plantMoistureRange[NUM_MOIST_SENSORS][2]; //Contains upper and lower allowed moisture level for each plant
 
 	while(true)
 	{
-		//Check if appCommunications signaled new commands from smartphone App
-		if(xSemaphoreTake(xNewAppCommands, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
+		// Check if appCommunications task signaled new commands from smartphone App
+		if(xSemaphoreTake(xNewAppCommands, 100 / portTICK_PERIOD_MS) || startup) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-			
+			//reload all settings from flash
 		}
 
-		//Read measurement (Timer)
-		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= US_IN_1M * timeBetweenMoistureChecks )
+		//Check if moisture sensors need to be read
+		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalMoistureCheck * US_IN_1M || startup)
 		{
-			//Read and update all moisture sensors
-			for(int i = 0; i<NUM_MOIST_SENSRS; i++)
-			{
-				readMoistSensr(moistSensrs[i]);
-			}
-
-			readWtrLvlSensr(wtrLvlSensr); // Waterlevel Sensor
-			
-			//Let other task know that new Sensor dada is available
-			xSemaphoreGive(xNewSensorData);
+			readEveryMoistSensor(moistureSensors); // Read and update all moisture sensors
+			xSemaphoreGive(xNewMoistureData); 
 			timeLastMoistureCheck = esp_timer_get_time(); // Set time for next check
+
+			//Check for every moisture sensor if plant needs to be watered
+			for(int i = 0; i < NUM_MOIST_SENSORS; i++)
+			{
+				//If given moisture level is not in allowed range -> water plant
+				if(moistureSensors[i].reading < plantMoistureRange[i][0] || moistureSensors[i].reading > plantMoistureRange[i][1])
+				{
+					//water plant 
+				}
+			}
 		}
 
+		//Check if water level sensors need to be read
+		if( (esp_timer_get_time() - timeLastWaterLvlCheck >= intervalWaterLvlCheck * US_IN_1M) || startup)
+		{
+			readWaterLvlSensor(waterLvlSensor); // Waterlevel Sensor
+			xSemaphoreGive(xNewWaterLvlData); // Let other task know that new Sensor dada is available
+			timeLastWaterLvlCheck = esp_timer_get_time();
+		}
+		
+		startup = false;
 	}
-
-	return;
 }
 
 void appCommunicationCode(void *)
@@ -142,7 +170,7 @@ void appCommunicationCode(void *)
 	while(true)
 	{
 		//Check if PlantSurveillance signaled new available sensor data
-		if(xSemaphoreTake(xNewSensorData, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
+		if(xSemaphoreTake(xNewMoistureData, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
 
 		}
@@ -157,14 +185,15 @@ void appCommunicationCode(void *)
 ///////////////////////////////////////////////////////////
 
 void setup() {
+	startup = true;
 
 	Serial.begin(115200);
 	delay(1000); //Take some time to open up the Serial Monitor
 
 	//Set pin modes
-	pinMode(moistSensrs[0].disablePin, OUTPUT);
-	pinMode(moistSensrs[1].disablePin, OUTPUT);
-	pinMode(WATER_LEVEL_SENSOR_PIN, INPUT);
+	pinMode(moistureSensors[0].disablePin, OUTPUT);
+	pinMode(moistureSensors[1].disablePin, OUTPUT);
+	pinMode(waterLvlSensor.sensorPin, INPUT);
 	pinMode(PUMP_ENABEL_PIN, OUTPUT);
 	pinMode(SOLENOID1_PIN, OUTPUT);
 	pinMode(SOLENOID2_PIN, OUTPUT);
@@ -175,9 +204,9 @@ void setup() {
 	//analogReadResolution(12);
 
 
-	xNewSensorData = xSemaphoreCreateBinary();
+	xNewMoistureData = xSemaphoreCreateBinary();
+	xNewWaterLvlData = xSemaphoreCreateBinary();
 	xNewAppCommands = xSemaphoreCreateBinary();
-
 	
 
 	//Create task for plant surveillance (sensor readings/evaluations, watering)
