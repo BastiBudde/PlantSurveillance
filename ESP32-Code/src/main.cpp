@@ -117,7 +117,7 @@ void plantSurveillanceCode(void *)
 		}
 
 		//Read measurement (Timer)
-		if ( (esp_timer_get_time() - timeLastMoisterCheck) >= US_IN_1M * timeBetweenMoistureChecks )
+		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= US_IN_1M * timeBetweenMoistureChecks )
 		{
 			//Read and update all moisture sensors
 			for(int i = 0; i<NUM_MOIST_SENSRS; i++)
