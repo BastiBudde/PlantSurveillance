@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Preferences.h>
 
 /*------------------USED PINS------------------*/
 // PIN		TYPE		CONNECTED TO
@@ -25,7 +26,7 @@
 #define NUM_MOISTURE_SAMPLES 6
 #define NUM_WATERLEVEL_SAMPLES 6
 
-#define US_IN_1M 60000*1000
+#define US_IN_1M 60000000 // 1 Minute
 
 
 ///////////////////////////////////////////////////////////
@@ -33,16 +34,17 @@
 ///////////////////////////////////////////////////////////
 
 bool startup;
-
+Preferences preferences;
 
 //struct for a moisture Sensor containing used µC pins and last read value
 struct plant {
 	uint8_t sensorPin;
 	uint8_t disablePin;
-	uint8_t valvePin;
+	uint8_t valvePin;      // Für Ventile
 	uint16_t reading;
 	uint16_t lowerLimit;
 	uint16_t upperLimit;
+	bool exists;
 };
 
 
@@ -67,7 +69,9 @@ SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands betw
 //Array of all moisture sensors
 plant plants[NUM_MOIST_SENSORS] = {
   {4, 11},
-  {5, 13}
+  {5, 13},
+  {},
+  {}
 };
 
 waterLevelSensor waterLvlSensor = {6};
@@ -142,9 +146,102 @@ void wateringPlant (waterPump w, plant p, waterLevelSensor s)
 }
 
 
-void initFlash()
+void initSettings()
 {
+	preferences.begin("settings", false);
+
+	if(!preferences.getULong64("intervalMoistureCheck", 0))
+	{
+		preferences.putULong64("intervalMoistureCheck", 30 * US_IN_1M); //default Value: 30 Minutes
+	}
+
+	//Plant 1 ----------------------------------------------------------------------------------
+	if(preferences.getBool("firstPlantExists", 0) == 0){
+		preferences.putBool("firstPlantLowerLimit", 0); //default Value: Plant doesn't exist
+	}
+
+	if(preferences.getUShort("firstPlantUpperLimit", 0) == 0){
+		preferences.putUShort("firstPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	}
 	
+	if(preferences.getUShort("firstPlantLowerLimit", 101) == 101){
+		preferences.putUShort("firstPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	}
+
+	//Plant 2 ----------------------------------------------------------------------------------
+	if(preferences.getBool("secondPlantExists", 0) == 0){
+		preferences.putBool("secondPlantLowerLimit", 0); //default Value: Plant doesn't exist
+	}
+
+	if(preferences.getUShort("secondPlantUpperLimit", 0) == 0){
+		preferences.putUShort("secondPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	}
+	
+	if(preferences.getUShort("secondPlantLowerLimit", 101) == 101){
+		preferences.putUShort("secondPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	}
+	
+	//Plant 3 ----------------------------------------------------------------------------------
+	if(preferences.getBool("thirdPlantExists", 0) == 0){
+		preferences.putBool("thirdPlantLowerLimit", 0); //default Value: Plant doesn't exist
+	}
+
+	if(preferences.getUShort("thirdPlantUpperLimit", 0) == 0){
+		preferences.putUShort("thirdPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	}
+	
+	if(preferences.getUShort("thirdPlantLowerLimit", 101) == 101){
+		preferences.putUShort("thirdPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	}
+
+	//Plant 4 ----------------------------------------------------------------------------------
+	if(preferences.getBool("fourthPlantExists", 0) == 0){
+		preferences.putBool("fourthPlantLowerLimit", 0); //default Value: Plant doesn't exist
+	}
+
+	if(preferences.getUShort("fourthPlantUpperLimit", 0) == 0){
+		preferences.putUShort("fourthPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	}
+	
+	if(preferences.getUShort("fourthPlantLowerLimit", 101) == 101){
+		preferences.putUShort("fourthPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	}
+	
+	preferences.end();
+	
+}
+
+void loadSettings()
+{
+	preferences.begin("settings", false);
+
+	intervalMoistureCheck = preferences.getULong64("intervalMoistureCheck", 0);
+	//plant 1 ----------------------------------------------------------------------------------
+	plants[1].exists = preferences.getBool("firstPlantExists", 0);
+	plants[1].upperLimit = preferences.getUShort("firstPlantUpperLimit", 0);
+	plants[1].lowerLimit = preferences.getUShort("firstPlantLowerLimit", 101);
+
+	//plant 2 ----------------------------------------------------------------------------------
+	plants[2].exists = preferences.getBool("secondPlantExists", 0);
+	plants[2].upperLimit = preferences.getUShort("secondPlantUpperLimit", 0);
+	plants[2].lowerLimit = preferences.getUShort("secondPlantLowerLimit", 101);
+
+	//plant 3 ----------------------------------------------------------------------------------
+	plants[3].exists = preferences.getBool("thirdPlantExists", 0);
+	plants[3].upperLimit = preferences.getUShort("thirdPlantUpperLimit", 0);
+	plants[3].lowerLimit = preferences.getUShort("thirdPlantLowerLimit", 101);
+	
+	//plant 4 ----------------------------------------------------------------------------------
+	plants[4].exists = preferences.getBool("fourthPlantExists", 0);
+	plants[4].upperLimit = preferences.getUShort("fourthPlantUpperLimit", 0);
+	plants[4].lowerLimit = preferences.getUShort("fourthlantLowerLimit", 101);
+	
+	preferences.end();
+}
+
+void setSettings()
+{
+	//write new settings that were received from app
 }
 
 
@@ -162,7 +259,7 @@ void plantSurveillanceCode(void *)
 		// Check if appCommunications task signaled new commands from smartphone App
 		if(xSemaphoreTake(xNewAppCommands, 100 / portTICK_PERIOD_MS) || startup) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-			//reload all settings from flash
+			loadSettings();
 		}
 
 		//Check if moisture sensors need to be read
@@ -205,7 +302,7 @@ void appCommunicationCode(void *)
 		//Check if PlantSurveillance signaled new available sensor data
 		if(xSemaphoreTake(xNewPlantData, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-
+			
 		}
 	}
 
@@ -237,11 +334,13 @@ void setup() {
 	//analogReadResolution(12);
 
 
-
 	xNewPlantData = xSemaphoreCreateBinary();
 	xNewWaterLvlData = xSemaphoreCreateBinary();
 	xNewAppCommands = xSemaphoreCreateBinary();
 	
+	
+	initSettings();
+	loadSettings();
 
 	//Create task for plant surveillance (sensor readings/evaluations, watering)
 	xTaskCreatePinnedToCore(
