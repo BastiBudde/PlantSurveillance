@@ -22,7 +22,7 @@
 #define PASSWORD "123456"
 
 #define HOST "162.168.10.0"
-#define PORT "3333"
+#define PORT 3333
 
 #define WATER_LEVEL_SENSOR_PIN 6
 
