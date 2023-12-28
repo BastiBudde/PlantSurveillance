@@ -17,12 +17,14 @@
 ///////////////////////////////////////////////////////////
 /*------------------------DEFINES------------------------*/
 ///////////////////////////////////////////////////////////
+#define DEBUG
 
-#define SSID "WLANNAME"
-#define PASSWORD "123456"
+// WIFI credentials
+#define SSID "WLAN-E2E567"
+#define PASSWORD "6529446175875462"
+// #define MAC_ADRESS "34-85-18-4A-64-70" //Mac adress of uC
 
-#define HOST "162.168.10.0"
-#define PORT 3333
+#define PORT 8088 //Port that uC is listening to
 
 #define WATER_LEVEL_SENSOR_PIN 6
 
@@ -93,13 +95,15 @@ waterLevelSensor waterLvlSensor = {6};
 waterPump pump = {38};
 
 
-uint64_t intervalMoistureCheck; //how often to check plant moisture
+uint64_t intervalCheck; //how often to check plant moisture
 
 //For wifi connection
 WiFiMulti wiFiMulti; // NOT WiFiMulti but wiFiMulti otherwise error
 
 // Use WiFiClient class to create TCP connections
-WiFiClient client; 
+WiFiServer server(PORT);
+WiFiClient client;
+
 
 ///////////////////////////////////////////////////////////
 /*-----------------------FUNCTIONS-----------------------*/
@@ -170,61 +174,61 @@ void initSettings()
 {
 	preferences.begin("settings", false);
 
-	if(!preferences.getULong64("intervalMoistureCheck", 0))
+	if(!preferences.getULong64("intervalCheck", 0))
 	{
-		preferences.putULong64("intervalMoistureCheck", 30 * US_IN_1M); //default Value: 30 Minutes
+		preferences.putULong64("intervalCheck", 30 * US_IN_1M); //default Value: 30 Minutes
 	}
 
 	//Plant 1 ----------------------------------------------------------------------------------
-	if(preferences.getBool("firstPlantExists", 0) == 0){
-		preferences.putBool("firstPlantExists", 0); //default Value: Plant doesn't exist
+	if(preferences.getBool("Plant1Exists", 0) == 0){
+		preferences.putBool("Plant1Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("firstPlantUpperLimit", 0) == 0){
-		preferences.putUShort("firstPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	if(preferences.getUShort("Plant1Upper", 0) == 0){
+		preferences.putUShort("Plant1Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("firstPlantLowerLimit", 101) == 101){
-		preferences.putUShort("firstPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	if(preferences.getUShort("Plant1Lower", 101) == 101){
+		preferences.putUShort("Plant1Lower", 0); //default Value: 0% of soilmoiusture
 	}
 
 	//Plant 2 ----------------------------------------------------------------------------------
-	if(preferences.getBool("secondPlantExists", 0) == 0){
-		preferences.putBool("secondPlantExists", 0); //default Value: Plant doesn't exist
+	if(preferences.getBool("Plant2Exists", 0) == 0){
+		preferences.putBool("Plant2Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("secondPlantUpperLimit", 0) == 0){
-		preferences.putUShort("secondPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	if(preferences.getUShort("Plant2Upper", 0) == 0){
+		preferences.putUShort("Plant2Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("secondPlantLowerLimit", 101) == 101){
-		preferences.putUShort("secondPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	if(preferences.getUShort("Plant2Lower", 101) == 101){
+		preferences.putUShort("Plant2Lower", 0); //default Value: 0% of soilmoiusture
 	}
 	
 	//Plant 3 ----------------------------------------------------------------------------------
-	if(preferences.getBool("thirdPlantExists", 0) == 0){
-		preferences.putBool("thirdPlantExists", 0); //default Value: Plant doesn't exist
+	if(preferences.getBool("Plant3Exists", 0) == 0){
+		preferences.putBool("Plant3Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("thirdPlantUpperLimit", 0) == 0){
-		preferences.putUShort("thirdPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	if(preferences.getUShort("Plant3Upper", 0) == 0){
+		preferences.putUShort("Plant3Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("thirdPlantLowerLimit", 101) == 101){
-		preferences.putUShort("thirdPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	if(preferences.getUShort("Plant3Lower", 101) == 101){
+		preferences.putUShort("Plant3Lower", 0); //default Value: 0% of soilmoiusture
 	}
 
 	//Plant 4 ----------------------------------------------------------------------------------
-	if(preferences.getBool("fourthPlantExists", 0) == 0){
-		preferences.putBool("fourthPlantExists", 0); //default Value: Plant doesn't exist
+	if(preferences.getBool("Plant4Exists", 0) == 0){
+		preferences.putBool("Plant4Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("fourthPlantUpperLimit", 0) == 0){
-		preferences.putUShort("fourthPlantUpperLimit", 100); //default Value: 100% of soilmoiusture
+	if(preferences.getUShort("Plant4Upper", 0) == 0){
+		preferences.putUShort("Plant4Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("fourthPlantLowerLimit", 101) == 101){
-		preferences.putUShort("fourthPlantLowerLimit", 0); //default Value: 0% of soilmoiusture
+	if(preferences.getUShort("Plant4Lower", 101) == 101){
+		preferences.putUShort("Plant4Lower", 0); //default Value: 0% of soilmoiusture
 	}
 	
 	preferences.end();
@@ -235,25 +239,25 @@ void loadSettings()
 {
 	preferences.begin("settings", false);
 
-	intervalMoistureCheck = preferences.getULong64("intervalMoistureCheck", 0);
+	intervalCheck = preferences.getULong64("intervalCheck", 0);
 	//plant 1 ----------------------------------------------------------------------------------
-	plants[1].exists = preferences.getBool("firstPlantExists", 0);
-	plants[1].upperLimit = preferences.getUShort("firstPlantUpperLimit", 0);
-	plants[1].lowerLimit = preferences.getUShort("firstPlantLowerLimit", 101);
+	plants[1].exists = preferences.getBool("Plant1Exists", 0);
+	plants[1].upperLimit = preferences.getUShort("Plant1Upper", 0);
+	plants[1].lowerLimit = preferences.getUShort("Plant1Lower", 101);
 
 	//plant 2 ----------------------------------------------------------------------------------
-	plants[2].exists = preferences.getBool("secondPlantExists", 0);
-	plants[2].upperLimit = preferences.getUShort("secondPlantUpperLimit", 0);
-	plants[2].lowerLimit = preferences.getUShort("secondPlantLowerLimit", 101);
+	plants[2].exists = preferences.getBool("Plant2Exists", 0);
+	plants[2].upperLimit = preferences.getUShort("Plant2Upper", 0);
+	plants[2].lowerLimit = preferences.getUShort("Plant2Lower", 101);
 
 	//plant 3 ----------------------------------------------------------------------------------
-	plants[3].exists = preferences.getBool("thirdPlantExists", 0);
-	plants[3].upperLimit = preferences.getUShort("thirdPlantUpperLimit", 0);
-	plants[3].lowerLimit = preferences.getUShort("thirdPlantLowerLimit", 101);
+	plants[3].exists = preferences.getBool("Plant3Exists", 0);
+	plants[3].upperLimit = preferences.getUShort("Plant3Upper", 0);
+	plants[3].lowerLimit = preferences.getUShort("Plant3Lower", 101);
 	
 	//plant 4 ----------------------------------------------------------------------------------
-	plants[4].exists = preferences.getBool("fourthPlantExists", 0);
-	plants[4].upperLimit = preferences.getUShort("fourthPlantUpperLimit", 0);
+	plants[4].exists = preferences.getBool("Plant4Exists", 0);
+	plants[4].upperLimit = preferences.getUShort("Plant4Upper", 0);
 	plants[4].lowerLimit = preferences.getUShort("fourthlantLowerLimit", 101);
 	
 	preferences.end();
@@ -262,7 +266,7 @@ void loadSettings()
 void setInterval(uint64_t value)
 {
 	preferences.begin("settings", false);
-	preferences.putULong64("intervalMoistureCheck", value * US_IN_1M); // value * 1 Minute
+	preferences.putULong64("intervalCheck", value * US_IN_1M); // value * 1 Minute
 	preferences.end();
 }
 
@@ -279,25 +283,25 @@ void setPlant(char* limits)
 
 	switch(atoi(buffer))
 	{
-		case 1:	preferences.putUShort("firstPlantUpperLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putUShort("firstPlantLowerLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putBool("firstPlantExists", atoi(strtok(NULL, &delimeter)));
+		case 1:	preferences.putUShort("Plant1Upper", atoi(strtok(NULL, &delimeter)));
+				preferences.putUShort("Plant1Lower", atoi(strtok(NULL, &delimeter)));
+				preferences.putBool("Plant1Exists", atoi(strtok(NULL, &delimeter)));
 				break;
 				
-		case 2:	preferences.putUShort("secondPlantUpperLimit", atoi(strtok(NULL, &delimeter))); 
-				preferences.putUShort("secondPlantLowerLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putBool("secondPlantExists", atoi(strtok(NULL, &delimeter)));  
+		case 2:	preferences.putUShort("Plant2Upper", atoi(strtok(NULL, &delimeter))); 
+				preferences.putUShort("Plant2Lower", atoi(strtok(NULL, &delimeter)));
+				preferences.putBool("Plant2Exists", atoi(strtok(NULL, &delimeter)));  
 				break;
 				
-		case 3: preferences.putUShort("thirdPlantUpperLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putUShort("thirdPlantLowerLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putBool("thirdPlantExists", atoi(strtok(NULL, &delimeter)));
+		case 3: preferences.putUShort("Plant3Upper", atoi(strtok(NULL, &delimeter)));
+				preferences.putUShort("Plant3Lower", atoi(strtok(NULL, &delimeter)));
+				preferences.putBool("Plant3Exists", atoi(strtok(NULL, &delimeter)));
 				break;
 				
 		case 4: 
-				preferences.putUShort("fourthPlantUpperLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putUShort("fourthPlantLowerLimit", atoi(strtok(NULL, &delimeter)));
-				preferences.putBool("fourthPlantExists", atoi(strtok(NULL, &delimeter)));
+				preferences.putUShort("Plant4Upper", atoi(strtok(NULL, &delimeter)));
+				preferences.putUShort("Plant4Lower", atoi(strtok(NULL, &delimeter)));
+				preferences.putBool("Plant4Exists", atoi(strtok(NULL, &delimeter)));
 				break;
 
 		default: Serial.println("Error");
@@ -314,11 +318,11 @@ void evalMessage(String msg)
 	uint64_t interval = 0;
 	char* limits;
 	
-	// "Plant:1,upperLimit,lowerLimit,exists"
-	// "Plant:2,upperLimit,lowerLimit,exists"
-	// "Plant:3,upperLimit,lowerLimit,exists"
-	// "Plant:4,upperLimit,lowerLimit,exists"
-	// "Interval:value"
+	// "plant:1,upperLimit,lowerLimit,exists"
+	// "plant:2,upperLimit,lowerLimit,exists"
+	// "plant:3,upperLimit,lowerLimit,exists"
+	// "plant:4,upperLimit,lowerLimit,exists"
+	// "interval:value"
 
 	command = strtok((char*)msg.c_str(), &delimeter1); // separate Data of App
 
@@ -359,7 +363,7 @@ void plantSurveillanceCode(void *)
 		}
 
 		//Check if moisture sensors need to be read
-		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalMoistureCheck * US_IN_1M || startup)
+		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalCheck * US_IN_1M || startup)
 		{
 			timeLastMoistureCheck = esp_timer_get_time(); // Set time for next check
 
@@ -437,6 +441,8 @@ void appCommunicationCode(void *)
 				xSemaphoreGive(xNewAppCommands);
 			}
 		}
+
+
 	}
 
 	return;
@@ -452,6 +458,7 @@ void setup() {
 
 	Serial.begin(115200);
 	delay(1000); //Take some time to open up the Serial Monitor
+	Serial.printf("Serial started!\n");
 
 	//Set pin modes
 	pinMode(plants[0].disablePin, OUTPUT);
@@ -501,7 +508,7 @@ void setup() {
 
 	Serial.println();
 	Serial.println();
-	Serial.print("Waiting for WiFi... ");
+	Serial.print("Waiting for WiFi... \n");
 
 	while(wiFiMulti.run() != WL_CONNECTED) {
 		Serial.print(".");
@@ -509,16 +516,53 @@ void setup() {
 	}
 
 	Serial.println("");
-	Serial.println("WiFi connected");
-	Serial.println("IP address: ");
+	Serial.println("WiFi connected\n");
+	Serial.println("IP address: \n");
 	Serial.println(WiFi.localIP());
 
-	if (!client.connect(HOST, PORT)) {
-        Serial.println("Connection failed.");
-        Serial.println("Waiting 5 seconds before retrying...");
-        delay(5000);
-        return;
-    }
+
+	// while (!client.connect(HOST, PORT)) {
+	//     Serial.println("Connection failed.\n");
+	//     Serial.println("Waiting 5 seconds before retrying...\n");
+	//     delay(1000);
+	// }
+
+	/*----------Following code is just to test TCP/IP communication----------*/
+
+	server.begin(); //uC is now able to receive messages
+
+	uint8_t data[30]; //for incomming data. max. 30 bytes
+
+	while(1)
+	{
+		client = server.available();	// Create client from received message (possible because messages 
+										// allways contain IP-Adress from sender)
+		if (client) //if new client available
+		{
+			Serial.println("new client");
+			
+			/* check client is connected */
+			while (client.connected())
+			{
+				if (client.available()) //Check if new message from client is available
+				{
+					/*Read message and print it*/
+					int len = client.read(data, 30);
+					if(len < 30)
+					{
+						data[len] = '\0';
+					}else
+					{
+						data[30] = '\0';
+					}
+					Serial.print("client sent: ");
+					Serial.println((char *)data);
+					client.printf("Recieved!");
+				}
+			} 
+		}
+	}
+    
 }
 
 
