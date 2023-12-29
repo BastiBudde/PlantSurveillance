@@ -8,10 +8,14 @@
 // PIN		TYPE		CONNECTED TO
 //-----------------------------------------------
 // 4		ADC1		Moisture Sensor 1: OUT
-// 11		GPIO		Moisture Sensor 1: DIS
 // 5		ADC1		Moisture Sensor 2: OUT
-// 12		GPIO		Moisture Sensor 2: DIS
-// 6		GPIO		Water Level Sensor
+// 6		ADC1		Moisture Sensor 3: OUT
+// 7		ADC1		Moisture Sensor 4: OUT
+// 15		GPIO		Moisture Sensor 1: DIS
+// 16		GPIO		Moisture Sensor 2: DIS
+// 17		GPIO		Moisture Sensor 1: DIS
+// 18		GPIO		Moisture Sensor 2: DIS
+// 37		GPIO		Water Level Sensor
 // 38		GPIO		Waper pump enable
 
 ///////////////////////////////////////////////////////////
@@ -35,12 +39,12 @@
 #define SOLENOID3_PIN 17
 #define SOLENOID4_PIN 18 
 
-#define NUM_MOIST_SENSORS 4
+#define NUM_PLANTS 4
 
 #define NUM_MOISTURE_SAMPLES 6
 #define NUM_WATERLEVEL_SAMPLES 6
 
-#define US_IN_1M 60000000 // 1 Minute
+#define US_IN_1MIN 60000000 // 1 Minute
 
 
 ///////////////////////////////////////////////////////////
@@ -80,16 +84,18 @@ SemaphoreHandle_t xNewPlantData;  //Used for synchronization of sensor data betw
 SemaphoreHandle_t xNewWaterLvlData;  //Used for synchronization of sensor data between tasks
 SemaphoreHandle_t xNewAppCommands;  //Used for synchronization app commands between tasks
 
+
+
 //Array of all moisture sensors
-plant plants[NUM_MOIST_SENSORS] = {
-  {4, 11},
-  {5, 13},
-  {},
-  {}
+plant plants[NUM_PLANTS] = {
+  {4, 15},
+  {5, 16},
+  {6, 17},
+  {7, 18}
 };
 
 //Struct containing the Water level Sensor
-waterLevelSensor waterLvlSensor = {6};
+waterLevelSensor waterLvlSensor = {37};
 
 //Struct containing the water pump
 waterPump pump = {38};
@@ -129,7 +135,7 @@ void readMoistSensor(plant s)
 
 void readEveryMoistSensor(plant s[])
 {
-	for(int i = 0; i<NUM_MOIST_SENSORS; i++)
+	for(int i = 0; i<NUM_PLANTS; i++)
 	{
 		readMoistSensor(s[i]);
 	}
@@ -170,64 +176,64 @@ void wateringPlant (waterPump w, plant p, waterLevelSensor s)
 }
 
 
-void initSettings()
+void initSettings(boolean reset = false)
 {
 	preferences.begin("settings", false);
 
-	if(!preferences.getULong64("intervalCheck", 0))
+	if(!preferences.getULong64("intervalCheck", 0)  || reset)
 	{
-		preferences.putULong64("intervalCheck", 30 * US_IN_1M); //default Value: 30 Minutes
+		preferences.putULong64("intervalCheck", 30); //default Value: 30 Minutes
 	}
 
 	//Plant 1 ----------------------------------------------------------------------------------
-	if(preferences.getBool("Plant1Exists", 0) == 0){
+	if(preferences.getBool("Plant1Exists", 0) == 0  || reset){
 		preferences.putBool("Plant1Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("Plant1Upper", 0) == 0){
+	if(preferences.getUShort("Plant1Upper", 0) == 0  || reset){
 		preferences.putUShort("Plant1Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("Plant1Lower", 101) == 101){
+	if(preferences.getUShort("Plant1Lower", 101) == 101  || reset){
 		preferences.putUShort("Plant1Lower", 0); //default Value: 0% of soilmoiusture
 	}
 
 	//Plant 2 ----------------------------------------------------------------------------------
-	if(preferences.getBool("Plant2Exists", 0) == 0){
+	if(preferences.getBool("Plant2Exists", 0) == 0  || reset){
 		preferences.putBool("Plant2Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("Plant2Upper", 0) == 0){
+	if(preferences.getUShort("Plant2Upper", 0) == 0  || reset){
 		preferences.putUShort("Plant2Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("Plant2Lower", 101) == 101){
+	if(preferences.getUShort("Plant2Lower", 101) == 101  || reset){
 		preferences.putUShort("Plant2Lower", 0); //default Value: 0% of soilmoiusture
 	}
 	
 	//Plant 3 ----------------------------------------------------------------------------------
-	if(preferences.getBool("Plant3Exists", 0) == 0){
+	if(preferences.getBool("Plant3Exists", 0) == 0  || reset){
 		preferences.putBool("Plant3Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("Plant3Upper", 0) == 0){
+	if(preferences.getUShort("Plant3Upper", 0) == 0  || reset){
 		preferences.putUShort("Plant3Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("Plant3Lower", 101) == 101){
+	if(preferences.getUShort("Plant3Lower", 101) == 101  || reset){
 		preferences.putUShort("Plant3Lower", 0); //default Value: 0% of soilmoiusture
 	}
 
 	//Plant 4 ----------------------------------------------------------------------------------
-	if(preferences.getBool("Plant4Exists", 0) == 0){
+	if(preferences.getBool("Plant4Exists", 0) == 0  || reset){
 		preferences.putBool("Plant4Exists", 0); //default Value: Plant doesn't exist
 	}
 
-	if(preferences.getUShort("Plant4Upper", 0) == 0){
+	if(preferences.getUShort("Plant4Upper", 0) == 0  || reset){
 		preferences.putUShort("Plant4Upper", 100); //default Value: 100% of soilmoiusture
 	}
 	
-	if(preferences.getUShort("Plant4Lower", 101) == 101){
+	if(preferences.getUShort("Plant4Lower", 101) == 101  || reset){
 		preferences.putUShort("Plant4Lower", 0); //default Value: 0% of soilmoiusture
 	}
 	
@@ -241,32 +247,41 @@ void loadSettings()
 
 	intervalCheck = preferences.getULong64("intervalCheck", 0);
 	//plant 1 ----------------------------------------------------------------------------------
-	plants[1].exists = preferences.getBool("Plant1Exists", 0);
-	plants[1].upperLimit = preferences.getUShort("Plant1Upper", 0);
-	plants[1].lowerLimit = preferences.getUShort("Plant1Lower", 101);
+	plants[0].exists = preferences.getBool("Plant1Exists", 0);
+	plants[0].upperLimit = preferences.getUShort("Plant1Upper", 0);
+	plants[0].lowerLimit = preferences.getUShort("Plant1Lower", 101);
 
 	//plant 2 ----------------------------------------------------------------------------------
-	plants[2].exists = preferences.getBool("Plant2Exists", 0);
-	plants[2].upperLimit = preferences.getUShort("Plant2Upper", 0);
-	plants[2].lowerLimit = preferences.getUShort("Plant2Lower", 101);
+	plants[1].exists = preferences.getBool("Plant2Exists", 0);
+	plants[1].upperLimit = preferences.getUShort("Plant2Upper", 0);
+	plants[1].lowerLimit = preferences.getUShort("Plant2Lower", 101);
 
 	//plant 3 ----------------------------------------------------------------------------------
-	plants[3].exists = preferences.getBool("Plant3Exists", 0);
-	plants[3].upperLimit = preferences.getUShort("Plant3Upper", 0);
-	plants[3].lowerLimit = preferences.getUShort("Plant3Lower", 101);
+	plants[2].exists = preferences.getBool("Plant3Exists", 0);
+	plants[2].upperLimit = preferences.getUShort("Plant3Upper", 0);
+	plants[2].lowerLimit = preferences.getUShort("Plant3Lower", 101);
 	
 	//plant 4 ----------------------------------------------------------------------------------
-	plants[4].exists = preferences.getBool("Plant4Exists", 0);
-	plants[4].upperLimit = preferences.getUShort("Plant4Upper", 0);
-	plants[4].lowerLimit = preferences.getUShort("fourthlantLowerLimit", 101);
+	plants[3].exists = preferences.getBool("Plant4Exists", 0);
+	plants[3].upperLimit = preferences.getUShort("Plant4Upper", 0);
+	plants[3].lowerLimit = preferences.getUShort("Plant4Lower", 101);
 	
 	preferences.end();
+}
+
+void printSettings()
+{
+	Serial.printf("intervalCheck: %d \n", intervalCheck);
+	for(int i = 0; i < NUM_PLANTS; i++)
+	{
+		Serial.printf("Plant %d:	upperLimit: %3d,	lowerLimit: %3d,	exists: %d \n", i+1, plants[i].upperLimit, plants[i].lowerLimit, plants[i].exists);
+	}
 }
 
 void setInterval(uint64_t value)
 {
 	preferences.begin("settings", false);
-	preferences.putULong64("intervalCheck", value * US_IN_1M); // value * 1 Minute
+	preferences.putULong64("intervalCheck", value); // value * 1 Minute
 	preferences.end();
 }
 
@@ -293,18 +308,17 @@ void setPlant(char* limits)
 				preferences.putBool("Plant2Exists", atoi(strtok(NULL, &delimeter)));  
 				break;
 				
-		case 3: preferences.putUShort("Plant3Upper", atoi(strtok(NULL, &delimeter)));
+		case 3:	preferences.putUShort("Plant3Upper", atoi(strtok(NULL, &delimeter)));
 				preferences.putUShort("Plant3Lower", atoi(strtok(NULL, &delimeter)));
 				preferences.putBool("Plant3Exists", atoi(strtok(NULL, &delimeter)));
 				break;
 				
-		case 4: 
-				preferences.putUShort("Plant4Upper", atoi(strtok(NULL, &delimeter)));
+		case 4:	preferences.putUShort("Plant4Upper", atoi(strtok(NULL, &delimeter)));
 				preferences.putUShort("Plant4Lower", atoi(strtok(NULL, &delimeter)));
 				preferences.putBool("Plant4Exists", atoi(strtok(NULL, &delimeter)));
 				break;
 
-		default: Serial.println("Error");
+		default: Serial.println("Invalid Plant Index");
 				 break;
 	}
 	
@@ -326,6 +340,8 @@ void evalMessage(String msg)
 
 	command = strtok((char*)msg.c_str(), &delimeter1); // separate Data of App
 
+	Serial.println(command);
+
 	if(strcmp(command, "interval") == 0)
 	{	
 		interval = atoi(strtok(NULL, &delimeter1));
@@ -341,7 +357,30 @@ void evalMessage(String msg)
 		Serial.println("Error in receiving Data");
 	}
 	
-	
+}
+
+void sendPlatData()
+{
+	// Send Data if plant exists
+	for (int i = 0; i<NUM_PLANTS; i++)
+	{
+		if(plants[i].exists)
+		{
+			client.printf("plant:%d,%d\n", &i, &plants[i].reading);
+		}
+	}
+}
+
+void sendWaterLvLData()
+{
+	if(waterLvlSensor.wtrLvlLow)
+	{
+		client.printf("waterLevelLow:%d\n", 1);
+	}
+	else
+	{
+		client.printf("waterLevelLow:%d\n", 0);
+	}
 }
 
 
@@ -360,10 +399,13 @@ void plantSurveillanceCode(void *)
 		if(xSemaphoreTake(xNewAppCommands, 100 / portTICK_PERIOD_MS) || startup) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{	
 			loadSettings();
+			#ifdef DEBUG
+				printSettings();
+			#endif
 		}
 
 		//Check if moisture sensors need to be read
-		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalCheck * US_IN_1M || startup)
+		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalCheck * US_IN_1MIN || startup)
 		{
 			timeLastMoistureCheck = esp_timer_get_time(); // Set time for next check
 
@@ -376,7 +418,7 @@ void plantSurveillanceCode(void *)
 			if(!waterLvlSensor.wtrLvlLow)
 			{
 				//Check for every moisture sensor if plant needs to be watered
-				for(int i = 0; i < NUM_MOIST_SENSORS; i++)
+				for(int i = 0; i < NUM_PLANTS; i++)
 				{
 					//If given moisture level is below allowed range -> water plant
 					if(plants[i].reading < plants[i].lowerLimit)
@@ -387,11 +429,12 @@ void plantSurveillanceCode(void *)
 			}
 			else
 			{
-				xSemaphoreGive(xNewWaterLvlData); // Let other task know that new Sensor dada is available
+				xSemaphoreGive(xNewWaterLvlData); // Let other task know that new Sensor data is available
 			}	
 		}
 
 		startup = false;
+		vTaskDelay(1); //To let other freeROTS tasks heve some CPU time
 	}
 }
 
@@ -399,50 +442,67 @@ void appCommunicationCode(void *)
 {
 	int64_t checkStart = esp_timer_get_time();
 
-
 	while(true)
 	{
 		//Check if PlantSurveillance signaled new available sensor data
-		if(xSemaphoreTake(xNewPlantData, 100 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
+		if(xSemaphoreTake(xNewPlantData, 50 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-			// Send Data if plant exists
-			for (int i = 0; i<NUM_MOIST_SENSORS; i++)
-			{
-				if(plants[i].exists)
-				{
-					client.printf("plant:%d,%d", &i, &plants[i].reading);
-				}
-			}
-
-			if(waterLvlSensor.wtrLvlLow)
-			{
-				client.printf("waterLevelLow:%d", 1);
-			}
-			else
-			{
-				client.printf("waterLevelLow:%d", 0);
-			}
+			sendPlatData();
 		}
 
-		checkStart = esp_timer_get_time();
-		while((esp_timer_get_time() - checkStart) <= 100000)
-		{	
-			// Saving available Data
-			if (client.available() > 0)
+		if(xSemaphoreTake(xNewWaterLvlData, 50 / portTICK_PERIOD_MS))
+		{
+			sendWaterLvLData();
+		}
+
+
+		/*Check if client still connected and wait for new one if not*/
+		if(!client.connected())
+		{
+			Serial.println("Client is disconnected");
+			client.stop();
+
+			Serial.println("Waiting for client...");
+			client = server.available(); // Create client from received message (possible because messages allways contain IP-Adress from sender)
+			while(!client) //Wait until a client is connected
+			{
+				client = server.available();
+				delay(100);
+			}
+			Serial.print("New Client connected: ");
+			Serial.print(client.localIP());
+			Serial.print(":");
+			Serial.println(client.localPort());
+			
+			//Greet new client ans send newest data
+			client.print("Connected!");
+			sendPlatData();
+			sendWaterLvLData();
+		}
+
+
+		/* check if client still connected */
+		if (client.connected())
+		{
+			if (client.available()) //Check if new message from client is available
 			{
 				//read back one line from the server
-				String line = client.readStringUntil('\r');
+				String line = client.readString();
 				
+				//Print message to console
 				#ifdef DEBUG
-				Serial.println(line);
+					Serial.print("client sent: ");
+					Serial.println(line);
+					client.print("Recieved!");
 				#endif
 				
+				//Evaluate message and let other task know new commands from App were send
 				evalMessage(line);
 				xSemaphoreGive(xNewAppCommands);
 			}
 		}
 
-
+		vTaskDelay(1); //To let other freeROTS tasks heve some CPU time
 	}
 
 	return;
@@ -458,7 +518,7 @@ void setup() {
 
 	Serial.begin(115200);
 	delay(1000); //Take some time to open up the Serial Monitor
-	Serial.printf("Serial started!\n");
+	Serial.println("Serial started!");
 
 	//Set pin modes
 	pinMode(plants[0].disablePin, OUTPUT);
@@ -486,7 +546,7 @@ void setup() {
 	//Create task for plant surveillance (sensor readings/evaluations, watering)
 	xTaskCreatePinnedToCore(
 		plantSurveillanceCode,   /* Task function. */
-		"PlantSurveillance",     /* name of task. */
+		"plantSurveillance",     /* name of task. */
 		10000,       /* Stack size of task */
 		NULL,        /* parameter of the task */
 		1,           /* priority of the task */
@@ -503,68 +563,29 @@ void setup() {
 		&appCommunicationTask,      /* Task handle to keep track of created task */
 		0);          /* pin task to core */ 
 
+
 	// connecting to a WiFi network
-	wiFiMulti.addAP(SSID, PASSWORD);
-
 	Serial.println();
 	Serial.println();
-	Serial.print("Waiting for WiFi... \n");
+	Serial.println("Waiting for WiFi...");
 
-	while(wiFiMulti.run() != WL_CONNECTED) {
-		Serial.print(".");
-		delay(500);
+	WiFi.begin(SSID, PASSWORD);
+
+	while(!WiFi.isConnected())
+	{
+		delay(100);
 	}
 
 	Serial.println("");
-	Serial.println("WiFi connected\n");
-	Serial.println("IP address: \n");
+	Serial.println("WiFi connected");
+	Serial.print("IP address: ");
 	Serial.println(WiFi.localIP());
-
-
-	// while (!client.connect(HOST, PORT)) {
-	//     Serial.println("Connection failed.\n");
-	//     Serial.println("Waiting 5 seconds before retrying...\n");
-	//     delay(1000);
-	// }
-
-	/*----------Following code is just to test TCP/IP communication----------*/
-
-	server.begin(); //uC is now able to receive messages
-
-	uint8_t data[30]; //for incomming data. max. 30 bytes
-
-	while(1)
-	{
-		client = server.available();	// Create client from received message (possible because messages 
-										// allways contain IP-Adress from sender)
-		if (client) //if new client available
-		{
-			Serial.println("new client");
-			
-			/* check client is connected */
-			while (client.connected())
-			{
-				if (client.available()) //Check if new message from client is available
-				{
-					/*Read message and print it*/
-					int len = client.read(data, 30);
-					if(len < 30)
-					{
-						data[len] = '\0';
-					}else
-					{
-						data[30] = '\0';
-					}
-					Serial.print("client sent: ");
-					Serial.println((char *)data);
-					client.printf("Recieved!");
-				}
-			} 
-		}
-	}
-    
+	server.begin(); //uC is now able to receive messages via TCP/IP
+	client = server.available();
+	
 }
 
 
 void loop() {
+	vTaskDelete(NULL); //Deletes task for this loop() funktion
 }
