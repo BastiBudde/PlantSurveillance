@@ -44,8 +44,11 @@
 #define NUM_MOISTURE_SAMPLES 6
 #define NUM_WATERLEVEL_SAMPLES 6
 
-#define US_IN_1MIN 60000000 // 1 Minute
-
+#ifdef DEBUG
+	#define US_IN_1MIN 10000000 // 1 Minute
+#else
+	#define US_IN_1MIN 60000000 // 1 Minute
+#endif
 
 ///////////////////////////////////////////////////////////
 /*-----------------------VARIABLES-----------------------*/
@@ -59,7 +62,7 @@ struct plant {
 	uint8_t sensorPin;
 	uint8_t disablePin;
 	uint8_t valvePin;      // For Valve
-	uint16_t reading;
+	uint8_t reading;
 	uint16_t lowerLimit;
 	uint16_t upperLimit;
 	bool exists;
@@ -115,21 +118,28 @@ WiFiClient client;
 /*-----------------------FUNCTIONS-----------------------*/
 ///////////////////////////////////////////////////////////
 
-void readMoistSensor(plant s)
+uint8_t rawADCtoMois(uint16_t rawADC)
 {
-	digitalWrite(s.disablePin, LOW); //Enable power for moisture sensor to be read
-	delay(100);
+	return 100 - 100*((((rawADC-1737.6969) / 4096.0) * 3.3) / (2.3-1.4));
+}
+
+void readMoistSensor(plant* s)
+{
+	digitalWrite((*s).disablePin, LOW); //Enable power for moisture sensor to be read
+	delay(1500);
+	uint64_t readings = 0;
 
 	//Take multiple samples of the voltage reading and take the average
-	s.reading = 0;
 	for(int i=0; i<NUM_MOISTURE_SAMPLES; i++)
 	{
-		s.reading += analogRead(s.sensorPin);
-		delay(10);
+		readings += analogRead((*s).sensorPin);
+		delay(100);
 	}
-	s.reading /= NUM_MOISTURE_SAMPLES;
+	//Serial.printf("Reading Gesamt: %d\n", readings / NUM_MOISTURE_SAMPLES);
+	
+	(*s).reading = rawADCtoMois( (uint16_t)readings / NUM_MOISTURE_SAMPLES );
 
-	digitalWrite(s.disablePin, HIGH); //Disable power for moisture sensor to be read
+	digitalWrite((*s).disablePin, HIGH); //Disable power for moisture sensor to be read
 	return;
 }
 
@@ -137,22 +147,25 @@ void readEveryMoistSensor(plant s[])
 {
 	for(int i = 0; i<NUM_PLANTS; i++)
 	{
-		readMoistSensor(s[i]);
+		if(s[i].exists)
+		{
+			readMoistSensor(&s[i]);
+		}
 	}
 }
 
 
-void readWaterLvlSensor(waterLevelSensor s)
+void readWaterLvlSensor(waterLevelSensor* s)
 {
 	//Read sensor multiple times in case sensor is just at the tipping point
 	for (int i = 0; i < NUM_WATERLEVEL_SAMPLES; i++)
 	{
-		if(digitalRead(s.sensorPin) == LOW){
-			s.wtrLvlLow = false;
+		if(digitalRead((*s).sensorPin) == LOW){
+			(*s).wtrLvlLow = false;
 		}
-		else if(digitalRead(s.sensorPin) == HIGH)
+		else if(digitalRead((*s).sensorPin) == HIGH)
 		{
-			s.wtrLvlLow = true;
+			(*s).wtrLvlLow = true;
 			return;
 		}
 	}
@@ -161,18 +174,18 @@ void readWaterLvlSensor(waterLevelSensor s)
 }
 
 
-void wateringPlant (waterPump w, plant p, waterLevelSensor s)
+void wateringPlant (waterPump* w, plant* p, waterLevelSensor* s)
 {	
-	digitalWrite(w.enablePin, HIGH); //Enable pump
+	digitalWrite((*w).enablePin, HIGH); //Enable pump
 	
 	//Wait until moisture upper limit is reached or water is empty
-	while ((p.reading < p.upperLimit) && !s.wtrLvlLow)
+	while (((*p).reading < (*p).upperLimit) && !(*s).wtrLvlLow)
 	{
 		readWaterLvlSensor(s); //update current water level
 		readMoistSensor(p); // update current moisture level 	
 	}
 
-	digitalWrite(w.enablePin, LOW); // disable Pump
+	digitalWrite((*w).enablePin, LOW); // disable Pump
 }
 
 
@@ -359,14 +372,14 @@ void evalMessage(String msg)
 	
 }
 
-void sendPlatData()
+void sendPlantData()
 {
 	// Send Data if plant exists
 	for (int i = 0; i<NUM_PLANTS; i++)
 	{
 		if(plants[i].exists)
 		{
-			client.printf("plant:%d,%d\n", &i, &plants[i].reading);
+			client.printf("plant:%d,%d\n", i+1, plants[i].reading);
 		}
 	}
 }
@@ -383,6 +396,16 @@ void sendWaterLvLData()
 	}
 }
 
+void printSensorData()
+{
+	for (int i = 0; i<NUM_PLANTS; i++)
+	{
+		if(plants[i].exists)
+		{
+			Serial.printf("plant:%d,%d\n", i+1, plants[i].reading);
+		}
+	}
+}
 
 ///////////////////////////////////////////////////////////
 /*----------------------MAIN TASKS-----------------------*/
@@ -403,14 +426,16 @@ void plantSurveillanceCode(void *)
 				printSettings();
 			#endif
 		}
-
+		
 		//Check if moisture sensors need to be read
 		if ( (esp_timer_get_time() - timeLastMoistureCheck) >= intervalCheck * US_IN_1MIN || startup)
 		{
 			timeLastMoistureCheck = esp_timer_get_time(); // Set time for next check
 
 			readEveryMoistSensor(plants); // Read and update all moisture sensors
-			readWaterLvlSensor(waterLvlSensor);
+			Serial.println("Sensors read:");
+			printSensorData();
+			readWaterLvlSensor(&waterLvlSensor);
 			
 			xSemaphoreGive(xNewPlantData);
 
@@ -423,7 +448,8 @@ void plantSurveillanceCode(void *)
 					//If given moisture level is below allowed range -> water plant
 					if(plants[i].reading < plants[i].lowerLimit)
 					{
-						wateringPlant(pump, plants[i], waterLvlSensor);
+						//wateringPlant(&pump, &plants[i], &waterLvlSensor);
+						Serial.println("Watering Plants :)");
 					}
 				}
 			}
@@ -447,7 +473,7 @@ void appCommunicationCode(void *)
 		//Check if PlantSurveillance signaled new available sensor data
 		if(xSemaphoreTake(xNewPlantData, 50 / portTICK_PERIOD_MS)) // 100/portTICK_PERIOD_MS means this function checks over and over again for 100ms
 		{
-			sendPlatData();
+			sendPlantData();
 		}
 
 		if(xSemaphoreTake(xNewWaterLvlData, 50 / portTICK_PERIOD_MS))
@@ -476,7 +502,7 @@ void appCommunicationCode(void *)
 			
 			//Greet new client ans send newest data
 			client.print("Connected!");
-			sendPlatData();
+			sendPlantData();
 			sendWaterLvLData();
 		}
 
