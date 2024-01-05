@@ -16,7 +16,7 @@
 // 17		GPIO		Moisture Sensor 1: DIS
 // 18		GPIO		Moisture Sensor 2: DIS
 // 37		GPIO		Water Level Sensor
-// 38		GPIO		Waper pump enable
+// 2		GPIO		Waper pump enable
 
 ///////////////////////////////////////////////////////////
 /*------------------------DEFINES------------------------*/
@@ -101,7 +101,7 @@ plant plants[NUM_PLANTS] = {
 waterLevelSensor waterLvlSensor = {37};
 
 //Struct containing the water pump
-waterPump pump = {38};
+waterPump pump = {2};
 
 
 uint64_t intervalCheck; //how often to check plant moisture
@@ -126,14 +126,14 @@ uint8_t rawADCtoMois(uint16_t rawADC)
 void readMoistSensor(plant* s)
 {
 	digitalWrite((*s).disablePin, LOW); //Enable power for moisture sensor to be read
-	delay(1500);
+	delay(1000);
 	uint64_t readings = 0;
 
 	//Take multiple samples of the voltage reading and take the average
 	for(int i=0; i<NUM_MOISTURE_SAMPLES; i++)
 	{
 		readings += analogRead((*s).sensorPin);
-		delay(100);
+		delay(50);
 	}
 	//Serial.printf("Reading Gesamt: %d\n", readings / NUM_MOISTURE_SAMPLES);
 	
@@ -157,26 +157,29 @@ void readEveryMoistSensor(plant s[])
 
 void readWaterLvlSensor(waterLevelSensor* s)
 {
+	uint8_t highCount = 0;
+	uint8_t lowCount = 0;
+
 	//Read sensor multiple times in case sensor is just at the tipping point
 	for (int i = 0; i < NUM_WATERLEVEL_SAMPLES; i++)
 	{
-		if(digitalRead((*s).sensorPin) == LOW){
-			(*s).wtrLvlLow = false;
-		}
-		else if(digitalRead((*s).sensorPin) == HIGH)
+		if(digitalRead((*s).sensorPin) == HIGH)
 		{
-			(*s).wtrLvlLow = true;
-			return;
+			highCount ++; 
+		}
+		else if(digitalRead((*s).sensorPin) == LOW)
+		{
+			lowCount++;
 		}
 	}
-	
+	(*s).wtrLvlLow = (highCount>lowCount) ? false : true;
 	return;
 }
 
 
 void wateringPlant (waterPump* w, plant* p, waterLevelSensor* s)
 {	
-	digitalWrite((*w).enablePin, HIGH); //Enable pump
+	digitalWrite((*w).enablePin, LOW); //Enable pump
 	
 	//Wait until moisture upper limit is reached or water is empty
 	while (((*p).reading < (*p).upperLimit) && !(*s).wtrLvlLow)
@@ -185,7 +188,7 @@ void wateringPlant (waterPump* w, plant* p, waterLevelSensor* s)
 		readMoistSensor(p); // update current moisture level 	
 	}
 
-	digitalWrite((*w).enablePin, LOW); // disable Pump
+	digitalWrite((*w).enablePin, HIGH); // disable Pump
 }
 
 
@@ -436,9 +439,12 @@ void plantSurveillanceCode(void *)
 			Serial.println("Sensors read:");
 			printSensorData();
 			readWaterLvlSensor(&waterLvlSensor);
-			
-			xSemaphoreGive(xNewPlantData);
+			Serial.printf("Waterlevel low: %d\n", waterLvlSensor.wtrLvlLow);
 
+			// Let other task know that new Sensor data is available
+			xSemaphoreGive(xNewPlantData);
+			xSemaphoreGive(xNewWaterLvlData); 
+			
 			//Check if water is available for watering of plants
 			if(!waterLvlSensor.wtrLvlLow)
 			{
@@ -448,15 +454,11 @@ void plantSurveillanceCode(void *)
 					//If given moisture level is below allowed range -> water plant
 					if(plants[i].reading < plants[i].lowerLimit)
 					{
-						//wateringPlant(&pump, &plants[i], &waterLvlSensor);
 						Serial.println("Watering Plants :)");
+						wateringPlant(&pump, &plants[i], &waterLvlSensor);
 					}
 				}
 			}
-			else
-			{
-				xSemaphoreGive(xNewWaterLvlData); // Let other task know that new Sensor data is available
-			}	
 		}
 
 		startup = false;
@@ -550,7 +552,11 @@ void setup() {
 	pinMode(plants[0].disablePin, OUTPUT);
 	pinMode(plants[1].disablePin, OUTPUT);
 	pinMode(waterLvlSensor.sensorPin, INPUT);
-	pinMode(PUMP_ENABEL_PIN, OUTPUT);
+	gpio_pulldown_en((gpio_num_t)waterLvlSensor.sensorPin);
+	pinMode(pump.enablePin, OUTPUT);
+	
+	digitalWrite(pump.enablePin, HIGH); //Disable Pump
+
 	pinMode(SOLENOID1_PIN, OUTPUT);
 	pinMode(SOLENOID2_PIN, OUTPUT);
 	pinMode(SOLENOID3_PIN, OUTPUT);
