@@ -30,6 +30,10 @@
 
 #define PORT 8088 //Port that uC is listening to
 
+// To select used moisture sensor
+#define MOISTURE_AZDELIVERY
+//#define MOISTURE_CRYTON
+
 #define WATER_LEVEL_SENSOR_PIN 6
 
 #define PUMP_ENABEL_PIN 7
@@ -41,8 +45,7 @@
 
 #define NUM_PLANTS 4
 
-#define NUM_MOISTURE_SAMPLES 6
-#define NUM_WATERLEVEL_SAMPLES 6
+#define NUM_MOISTURE_SAMPLES 3
 
 #ifdef DEBUG
 	#define US_IN_1MIN 10000000 // 1 Minute
@@ -62,6 +65,7 @@ struct plant {
 	uint8_t sensorPin;
 	uint8_t disablePin;
 	uint8_t valvePin;      // For Valve
+	uint16_t rawADC;
 	uint8_t reading;
 	uint16_t lowerLimit;
 	uint16_t upperLimit;
@@ -120,35 +124,48 @@ WiFiClient client;
 /*-----------------------FUNCTIONS-----------------------*/
 ///////////////////////////////////////////////////////////
 
+double fmap(double x, double in_min, double in_max, double out_min, double out_max) {
+	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 uint8_t rawADCtoMois(uint16_t rawADC)
 {
-	if((rawADC/4096.0) * 3.3 < 1.4)
-	{
-		return 0;
-	}
-	else
-	{
-		return 100 - 100*((((rawADC-1737.6969) / 4096.0) * 3.3) / (2.3-1.4));
-	}
+	#if defined(MOISTURE_CRYTON)
+		if((rawADC/4096.0) * 3.3 < 1.3)
+		{
+			return 0;
+		}
+		else
+		{
+			//return 100 - 100*((((rawADC-1737.6969) / 4095.0) * 3.3) / (2.3-1.4));
+			return 100 - ((rawADC - 1737.6969) * (100 - 0) / (2854.7878 - 1737.6969));
+			return (int)fmap((double)rawADC, 2854.7878, 1737.6969, 0.0, 100.0);
+		}
 
-
+	#elif defined(MOISTURE_AZDELIVERY)
+		//return 100 - 100*(rawADC / 4095.0);
+		return (int)fmap( (double)rawADC, 4095.0, 1106.0, 0.0, 100.0);	// Measurment in water: 1106 Analog reading, Measurment in dry soil: 4095 Analog reading 
+																		// Mapped to parcentage between 0 and 100
+	#endif
 }
 
 void readMoistSensor(plant* s)
 {
 	digitalWrite((*s).disablePin, LOW); //Enable power for moisture sensor to be read
-	delay(1000);
-	uint64_t readings = 0;
+	delay(600);
+	uint64_t rawADC = 0;
 
 	//Take multiple samples of the voltage reading and take the average
 	for(int i=0; i<NUM_MOISTURE_SAMPLES; i++)
 	{
-		readings += analogRead((*s).sensorPin);
+		rawADC += analogRead((*s).sensorPin);
 		delay(50);
 	}
 	//Serial.printf("Reading Gesamt: %d\n", readings / NUM_MOISTURE_SAMPLES);
 
-	(*s).reading = rawADCtoMois( (uint16_t)readings / NUM_MOISTURE_SAMPLES );
+	rawADC = rawADC / NUM_MOISTURE_SAMPLES;
+	(*s).rawADC = (uint16_t)rawADC;
+	(*s).reading = rawADCtoMois( (uint16_t)rawADC );
 
 	digitalWrite((*s).disablePin, HIGH); //Disable power for moisture sensor to be read
 	return;
@@ -168,22 +185,7 @@ void readEveryMoistSensor(plant s[])
 
 void readWaterLvlSensor(waterLevelSensor* s)
 {
-	uint8_t highCount = 0;
-	uint8_t lowCount = 0;
-
-	//Read sensor multiple times in case sensor is just at the tipping point
-	for (int i = 0; i < NUM_WATERLEVEL_SAMPLES; i++)
-	{
-		if(digitalRead((*s).sensorPin) == HIGH)
-		{
-			highCount ++;
-		}
-		else if(digitalRead((*s).sensorPin) == LOW)
-		{
-			lowCount++;
-		}
-	}
-	(*s).wtrLvlLow = (highCount>lowCount) ? false : true;
+	(*s).wtrLvlLow = !digitalRead((*s).sensorPin);
 	return;
 }
 
@@ -197,6 +199,16 @@ void wateringPlant (waterPump* w, plant* p, waterLevelSensor* s)
 	{
 		readWaterLvlSensor(s); //update current water level
 		readMoistSensor(p); // update current moisture level
+	}
+
+	if((*s).wtrLvlLow)
+	{
+		Serial.println("Ran out of water :(");
+	}
+
+	if((*p).reading >= (*p).upperLimit)
+	{
+		Serial.println("Watering finished :)");
 	}
 
 	digitalWrite((*w).enablePin, HIGH); // disable Pump
@@ -357,7 +369,6 @@ boolean evalMessage(String msg)
 {
 	const char* msg_c = msg.c_str();
 	const char delimeter1 = ':';
-	char* command;
 	uint64_t interval = 0;
 	char* limits;
 
@@ -366,23 +377,22 @@ boolean evalMessage(String msg)
 	// "plant:3,upperLimit,lowerLimit,exists"
 	// "plant:4,upperLimit,lowerLimit,exists"
 	// "interval:value"
-
-	command = strtok((char*)msg_c, &delimeter1); // separate Data of App
+	strtok((char*)msg_c, &delimeter1); // separate Data of App
 
 	//Serial.println(command);
-	if(strcmp(command, "interval") == 0)
+	if(strcmp(msg_c, "interval") == 0)
 	{
 		interval = atoi(strtok(NULL, &delimeter1));
 		setInterval(interval);
 		return true;
 	}
-	else if(strcmp(command, "plant") == 0)
+	else if(strcmp(msg_c, "plant") == 0)
 	{
 		limits = strtok(NULL, &delimeter1);
 		setPlant(limits);
 		return true;
 	}
-	else if(strcmp(command, "Test") == 0)
+	else if(strcmp(msg_c, "ping") == 0)
 	{
 		return false;
 	}
@@ -429,7 +439,7 @@ void printSensorData()
 	{
 		if(plants[i].exists)
 		{
-			Serial.printf("    Plant-%d moist.: %d\n", i+1, plants[i].reading);
+			Serial.printf("    Plant-%d moist.: %d %% (raw: %d)\n", i+1, plants[i].reading, plants[i].rawADC);
 		}
 	}
 	Serial.printf("    Waterlevel: %s\n\n", waterLvlSensor.wtrLvlLow==true ? "low" : "high");
@@ -481,7 +491,15 @@ void plantSurveillanceCode(void *)
 						Serial.println("Watering Plants :)");
 						wateringPlant(&pump, &plants[i], &waterLvlSensor);
 					}
+					else
+					{
+						Serial.println("Moisture OK :)");
+					}
 				}
+			}
+			else
+			{
+				Serial.println("Not enough Water :(");
 			}
 		}
 
@@ -549,7 +567,7 @@ void appCommunicationCode(void *)
 					Serial.printf(line.c_str()); // String to char array
 					Serial.printf("\"\n");
 
-					client.println("Recieved!");
+					//client.println("Recieved!");
 				#endif
 
 				//Evaluate message
